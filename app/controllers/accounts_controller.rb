@@ -2,7 +2,7 @@ class AccountsController < ApplicationController
   ACCOUNTS_TOPIC_CUD = 'accounts_stream'
   ACCOUNTS_TOPIC_BE = 'accounts_lifecycle'
 
-  before_action :set_account, only: [:edit, :update, :destroy]
+  before_action :set_account, only: [:edit, :update, :destroy, :enable]
 
   before_action :authenticate_account!, except: [:current]
 
@@ -29,9 +29,12 @@ class AccountsController < ApplicationController
       if @account.update(account_params)
         # ----------------------------- produce event -----------------------
         message = {
-          message_name: 'AccountUpdated',
+          event_name: 'AccountUpdated',
+          message_version: 2,
+          message_time: Time.now,
+          producer: 'auth_service',
           data: {
-            id: @account.id,
+            account_public_id: @account.id,
             email: @account.email,
             full_name: @account.full_name,
             position: @account.position,
@@ -71,6 +74,47 @@ class AccountsController < ApplicationController
     end
   end
 
+  # PUT
+  # for education purposes only to play with accounts and messages
+  def enable
+    @account.update(active: true, disabled_at: nil)
+
+    # ----------------------------- produce event -----------------------
+    message = {
+      type: 'AccountEnabled',
+      data: { id: @account.id }
+    }
+    Producer.new.publish(message, topic: ACCOUNTS_TOPIC_CUD)
+    # --------------------------------------------------------------------
+
+    respond_to do |format|
+      redirect_to root_path, notice: 'Account was successfully enabled.'
+    end
+  end
+
+  def resend_all_active_accounts
+    count = 0
+    Account.where(active: true).each do |account|
+      message = {
+        event_name: 'AccountUpdated',
+        message_version: 2,
+        message_time: Time.now,
+        producer: 'auth_service',
+        data: {
+          account_public_id: account.id,
+          email: account.email,
+          full_name: account.full_name,
+          position: account.position,
+          role: account.role
+        }
+      }
+      Producer.new.publish(message, topic: ACCOUNTS_TOPIC_CUD)
+      count += 1
+    end
+
+    redirect_to root_path, notice: "Information about #{count} active accounts was resent."
+  end
+
   private
 
   def current_account
@@ -85,7 +129,6 @@ class AccountsController < ApplicationController
     @account = Account.find(params[:id])
   end
 
-  # Only allow a list of trusted parameters through.
   def account_params
     params.require(:account).permit(:full_name, :role)
   end

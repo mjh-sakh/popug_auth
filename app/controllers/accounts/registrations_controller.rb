@@ -8,9 +8,12 @@ class Accounts::RegistrationsController < Devise::RegistrationsController
 
     # ----------------------------- produce event -----------------------
     message = {
-      message_name: 'AccountCreated',
+      event_name: 'AccountCreated',
+      message_version: 2,
+      message_time: Time.now,
+      producer: 'auth_service',
       data: {
-        id: resource.id,
+        account_public_id: resource.id,
         email: resource.email,
         full_name: resource.full_name,
         position: resource.position,
